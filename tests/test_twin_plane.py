@@ -96,10 +96,11 @@ def test_create_user_rejects_unknown_app_id(client, admin_headers):
     assert r.status_code == 404
 
 
-def test_tenant_can_mint_token(client, basic_auth, test_user):
+def test_tenant_can_mint_token(client, tenant_headers, test_app_record, test_user):
     r = client.post("/_twin/tokens", json={
+        "app_id": test_app_record["app_id"],
         "fb_id": test_user["fb_id"], "scopes": ["email"],
-    }, headers=basic_auth)
+    }, headers=tenant_headers)
     assert r.status_code == 201
     body = r.get_json()
     assert body["access_token"].startswith("EAA")
@@ -112,18 +113,20 @@ def test_admin_requires_app_id_for_mint(client, admin_headers, test_user):
     assert r.status_code == 400
 
 
-def test_logs_admin_vs_tenant(client, admin_headers, basic_auth, test_app_record, test_user):
-    # Tenant mints a token — this logs with app_id.
-    client.post("/_twin/tokens", json={"fb_id": test_user["fb_id"]}, headers=basic_auth)
+def test_logs_admin_vs_tenant(client, admin_headers, tenant, tenant_headers, test_app_record, test_user):
+    # Tenant mints a token — this logs with the tenant_id.
+    client.post("/_twin/tokens", json={
+        "app_id": test_app_record["app_id"], "fb_id": test_user["fb_id"],
+    }, headers=tenant_headers)
 
     r_admin = client.get("/_twin/logs", headers=admin_headers)
     assert r_admin.status_code == 200
     assert r_admin.get_json()["logs"], "admin should see logs"
 
-    r_tenant = client.get("/_twin/logs", headers=basic_auth)
+    r_tenant = client.get("/_twin/logs", headers=tenant_headers)
     body = r_tenant.get_json()
     for entry in body["logs"]:
-        assert entry.get("app_id") == test_app_record["app_id"]
+        assert entry.get("tenant_id") == tenant["tenant_id"]
 
 
 def test_wrong_admin_token_rejected(client, app):
@@ -139,29 +142,36 @@ def test_bearer_admin_token_accepted(client, admin_token):
     assert r.status_code == 201
 
 
-def test_cross_tenant_mint_is_rejected(client, admin_headers):
-    """Tenant B authenticated with its own app:secret cannot mint a token
-    pointing to tenant A's user. Per-app user scoping closes the cross-tenant
-    PII exfiltration path reported in the Stage-4 security review."""
+def test_cross_tenant_mint_is_rejected(client, tenant_store):
+    """Tenant B cannot mint a token for an app owned by tenant A."""
     import base64
+    from twins_local.tenants import (
+        generate_tenant_id, generate_tenant_secret, hash_secret,
+    )
+
+    def _mk(name):
+        tid = generate_tenant_id()
+        secret = generate_tenant_secret()
+        tenant_store.create_tenant(tid, hash_secret(secret), name)
+        creds = base64.b64encode(f"{tid}:{secret}".encode()).decode()
+        return tid, {"Authorization": f"Basic {creds}"}
+
+    _, headers_a = _mk("A")
+    _, headers_b = _mk("B")
+
     app_a = client.post("/_twin/apps", json={
         "name": "A", "redirect_uris": ["https://a/cb"],
-    }, headers=admin_headers).get_json()
+    }, headers=headers_a).get_json()
     user_a = client.post("/_twin/users", json={
         "app_id": app_a["app_id"],
         "name": "Alice A", "email": "alice@a.test", "granted_scopes": ["email"],
-    }, headers=admin_headers).get_json()
+    }, headers=headers_a).get_json()
 
-    app_b = client.post("/_twin/apps", json={
-        "name": "B", "redirect_uris": ["https://b/cb"],
-    }, headers=admin_headers).get_json()
-    creds = f"{app_b['app_id']}:{app_b['app_secret']}"
-    b_auth = {"Authorization": "Basic " + base64.b64encode(creds.encode()).decode()}
-
+    # Tenant B attempts to mint a token for tenant A's app — must fail at app-scope check.
     r = client.post("/_twin/tokens",
-                    json={"fb_id": user_a["fb_id"]},
-                    headers=b_auth)
-    assert r.status_code == 404, "tenant B must not mint tokens for tenant A's users"
+                    json={"app_id": app_a["app_id"], "fb_id": user_a["fb_id"]},
+                    headers=headers_b)
+    assert r.status_code == 404, "tenant B must not mint tokens for tenant A's app"
 
 
 def test_cross_tenant_dialog_is_rejected(client, admin_headers):

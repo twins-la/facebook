@@ -5,22 +5,24 @@ import pytest
 from twins_facebook.versions import SUPPORTED_VERSIONS
 
 
-def _mint(client, basic_auth, fb_id):
-    r = client.post("/_twin/tokens", json={"fb_id": fb_id}, headers=basic_auth)
+def _mint(client, tenant_headers, app_id, fb_id):
+    r = client.post("/_twin/tokens", json={
+        "app_id": app_id, "fb_id": fb_id,
+    }, headers=tenant_headers)
     return r.get_json()["access_token"]
 
 
 @pytest.mark.parametrize("version", SUPPORTED_VERSIONS)
-def test_me_routes_on_every_supported_version(client, basic_auth, test_user, version):
-    tok = _mint(client, basic_auth, test_user["fb_id"])
+def test_me_routes_on_every_supported_version(client, basic_auth, test_user, version, tenant_headers, test_app_record):
+    tok = _mint(client, tenant_headers, test_app_record["app_id"], test_user["fb_id"])
     r = client.get(f"/{version}/me?fields=id",
                    headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 200
 
 
 @pytest.mark.parametrize("version", SUPPORTED_VERSIONS)
-def test_debug_token_routes_on_every_supported_version(client, basic_auth, test_app_record, test_user, version):
-    tok = _mint(client, basic_auth, test_user["fb_id"])
+def test_debug_token_routes_on_every_supported_version(client, basic_auth, test_app_record, test_user, version, tenant_headers):
+    tok = _mint(client, tenant_headers, test_app_record["app_id"], test_user["fb_id"])
     app_token = f"{test_app_record['app_id']}|{test_app_record['app_secret']}"
     r = client.get(f"/{version}/debug_token", query_string={
         "input_token": tok, "access_token": app_token,

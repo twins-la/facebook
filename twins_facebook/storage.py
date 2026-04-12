@@ -3,17 +3,19 @@
 Hosts provide concrete implementations (SQLite, Postgres, in-memory).
 The twin package never imports a specific database driver.
 
+Every resource carries ``tenant_id`` (the twins.la platform tenant).
+Apps and users are resources owned by a tenant; fb_id remains unique
+within an app (not across the tenant).
+
 Dicts on the wire between twin and storage use these keys:
 
 App:
-    app_id, app_secret, name, redirect_uris (list[str]),
+    app_id, tenant_id, app_secret, name, redirect_uris (list[str]),
     date_created, date_updated
 User:
-    fb_id, app_id, name, email (may be empty), granted_scopes (list[str]),
+    fb_id, app_id, tenant_id, name, email, granted_scopes (list[str]),
     simulate_invalid (bool), simulate_expired (bool),
     date_created, date_updated
-    (fb_id is unique within the owning app_id; two apps MAY have users
-    with the same fb_id — users are test fixtures, not a global graph.)
 AuthCode:
     code, app_id, user_fb_id, redirect_uri, scopes (list[str]),
     expires_at (unix ts), consumed (bool)
@@ -22,7 +24,7 @@ AccessToken:
     issued_at (unix ts), expires_at (unix ts),
     is_revoked (bool)
 Log:
-    operation, app_id (optional), ..., ts
+    operation, tenant_id, app_id (optional), ..., ts
 """
 
 from abc import ABC, abstractmethod
@@ -43,8 +45,8 @@ class FacebookTwinStorage(ABC):
         """Fetch an app by id."""
 
     @abstractmethod
-    def list_apps(self) -> list[dict]:
-        """List all apps."""
+    def list_apps(self, tenant_id: Optional[str] = None) -> list[dict]:
+        """List apps, optionally scoped to a tenant. None means all apps (admin)."""
 
     @abstractmethod
     def delete_app(self, app_id: str) -> bool:
@@ -115,5 +117,5 @@ class FacebookTwinStorage(ABC):
 
     @abstractmethod
     def list_logs(self, limit: int = 100, offset: int = 0,
-                  app_id: Optional[str] = None) -> list[dict]:
-        """Retrieve operation logs, optionally scoped to one app."""
+                  tenant_id: Optional[str] = None) -> list[dict]:
+        """Retrieve operation logs, optionally scoped to one tenant."""

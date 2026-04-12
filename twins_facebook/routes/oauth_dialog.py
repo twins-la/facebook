@@ -178,7 +178,10 @@ def _handle_dialog():
     # Simulated denial.
     if twin_simulate == "denied":
         frag = response_type == "token"
+        _app = storage.get_app(client_id)
+        _tid = (_app or {}).get("tenant_id", "")
         storage.append_log({
+            "tenant_id": _tid,
             "operation": "oauth.dialog.denied",
             "app_id": client_id,
             "redirect_uri": redirect_uri,
@@ -226,7 +229,10 @@ def _handle_dialog():
             "expires_at": now + _DEFAULT_CODE_TTL,
             "consumed": False,
         })
+        _app = storage.get_app(client_id)
+        _tid = (_app or {}).get("tenant_id", "")
         storage.append_log({
+            "tenant_id": _tid,
             "operation": "oauth.dialog.code_issued",
             "app_id": client_id,
             "user_fb_id": user["fb_id"],
@@ -245,7 +251,10 @@ def _handle_dialog():
         "expires_at": now + _DEFAULT_TOKEN_TTL,
         "is_revoked": False,
     })
+    _app = storage.get_app(client_id)
+    _tid = (_app or {}).get("tenant_id", "")
     storage.append_log({
+        "tenant_id": _tid,
         "operation": "oauth.dialog.token_issued",
         "app_id": client_id,
         "user_fb_id": user["fb_id"],

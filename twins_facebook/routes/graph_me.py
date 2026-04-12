@@ -93,7 +93,10 @@ def _me_impl(target_fb_id: str | None):
             f"(#100) Tried accessing nonexisting field ({unknown[0]}) on node type (User)",
         )
 
+    _app = g.storage.get_app(rec["app_id"])
+    _tid = (_app or {}).get("tenant_id", "")
     g.storage.append_log({
+        "tenant_id": _tid,
         "operation": "graph.me.fetch",
         "app_id": rec["app_id"],
         "user_fb_id": user["fb_id"],

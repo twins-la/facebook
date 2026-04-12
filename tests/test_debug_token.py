@@ -1,15 +1,15 @@
 """debug_token: validity, app_id attribution, substitution detection."""
 
 
-def _mint(client, basic_auth, fb_id):
+def _mint(client, tenant_headers, app_id, fb_id):
     r = client.post("/_twin/tokens", json={
-        "fb_id": fb_id, "scopes": ["email"],
-    }, headers=basic_auth)
+        "app_id": app_id, "fb_id": fb_id, "scopes": ["email"],
+    }, headers=tenant_headers)
     return r.get_json()["access_token"]
 
 
-def test_debug_valid_user_token(client, basic_auth, test_app_record, test_user):
-    tok = _mint(client, basic_auth, test_user["fb_id"])
+def test_debug_valid_user_token(client, basic_auth, test_app_record, test_user, tenant_headers):
+    tok = _mint(client, tenant_headers, test_app_record["app_id"], test_user["fb_id"])
     app_token = f"{test_app_record['app_id']}|{test_app_record['app_secret']}"
     r = client.get("/v19.0/debug_token", query_string={
         "input_token": tok, "access_token": app_token,
@@ -22,8 +22,8 @@ def test_debug_valid_user_token(client, basic_auth, test_app_record, test_user):
     assert data["type"] == "USER"
 
 
-def test_debug_revoked_token_is_invalid(client, basic_auth, storage, test_app_record, test_user):
-    tok = _mint(client, basic_auth, test_user["fb_id"])
+def test_debug_revoked_token_is_invalid(client, basic_auth, storage, test_app_record, test_user, tenant_headers):
+    tok = _mint(client, tenant_headers, test_app_record["app_id"], test_user["fb_id"])
     storage.revoke_access_token(tok)
     app_token = f"{test_app_record['app_id']}|{test_app_record['app_secret']}"
     r = client.get("/v19.0/debug_token", query_string={
@@ -32,9 +32,9 @@ def test_debug_revoked_token_is_invalid(client, basic_auth, storage, test_app_re
     assert r.get_json()["data"]["is_valid"] is False
 
 
-def test_debug_detects_cross_app_token(client, admin_headers, basic_auth, test_app_record, test_user):
+def test_debug_detects_cross_app_token(client, admin_headers, basic_auth, test_app_record, test_user, tenant_headers):
     # Create a second app; issue a token for test_user via app1 (existing).
-    tok = _mint(client, basic_auth, test_user["fb_id"])
+    tok = _mint(client, tenant_headers, test_app_record["app_id"], test_user["fb_id"])
     r = client.post("/_twin/apps", json={
         "name": "App2", "redirect_uris": ["https://a2/cb"],
     }, headers=admin_headers)
@@ -80,10 +80,10 @@ def test_debug_bad_app_token_rejected(client):
     assert r.get_json()["error"]["code"] == 190
 
 
-def test_debug_user_token_as_caller_works(client, basic_auth, test_user):
+def test_debug_user_token_as_caller_works(client, basic_auth, test_user, tenant_headers, test_app_record):
     """A valid user access token may authenticate the caller. Exercises the
     non-app-token code path in debug_token that wasn't previously covered."""
-    tok = _mint(client, basic_auth, test_user["fb_id"])
+    tok = _mint(client, tenant_headers, test_app_record["app_id"], test_user["fb_id"])
     r = client.get("/v19.0/debug_token", query_string={
         "input_token": tok, "access_token": tok,
     })

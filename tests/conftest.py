@@ -5,7 +5,10 @@ package tests, never shipped as a host. Hosts implement the ABC
 themselves (SQLite for local, Postgres for cloud).
 """
 
+import base64
 import copy
+import os
+import sys
 import threading
 from typing import Optional
 
@@ -15,12 +18,23 @@ from twins_facebook.app import create_app
 from twins_facebook.storage import FacebookTwinStorage
 from twins_facebook.ids import generate_fbtrace_id  # noqa: F401 (sanity import)
 
+# Make twins_local importable even when tests run without site-packages install.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "local"))
+
+from twins_local.tenants import (
+    SQLiteTenantStore,
+    ensure_default_tenant,
+    generate_tenant_id,
+    generate_tenant_secret,
+    hash_secret,
+)
+
 
 class InMemoryStorage(FacebookTwinStorage):
     def __init__(self):
         self._lock = threading.Lock()
         self._apps: dict[str, dict] = {}
-        self._users: dict[str, dict] = {}
+        self._users: dict[tuple, dict] = {}
         self._codes: dict[str, dict] = {}
         self._tokens: dict[str, dict] = {}
         self._logs: list[dict] = []
@@ -36,16 +50,18 @@ class InMemoryStorage(FacebookTwinStorage):
             a = self._apps.get(app_id)
             return copy.deepcopy(a) if a else None
 
-    def list_apps(self) -> list[dict]:
+    def list_apps(self, tenant_id: Optional[str] = None) -> list[dict]:
         with self._lock:
-            return [copy.deepcopy(a) for a in self._apps.values()]
+            if tenant_id is None:
+                return [copy.deepcopy(a) for a in self._apps.values()]
+            return [copy.deepcopy(a) for a in self._apps.values()
+                    if a.get("tenant_id") == tenant_id]
 
     def delete_app(self, app_id: str) -> bool:
         with self._lock:
             if app_id not in self._apps:
                 return False
             del self._apps[app_id]
-            # Cascade: drop users, codes & tokens belonging to this app.
             for k in [k for k in self._users if k[0] == app_id]:
                 del self._users[k]
             for c in list(self._codes):
@@ -134,9 +150,9 @@ class InMemoryStorage(FacebookTwinStorage):
         with self._lock:
             self._logs.append(e)
 
-    def list_logs(self, limit=100, offset=0, app_id=None) -> list[dict]:
+    def list_logs(self, limit=100, offset=0, tenant_id=None) -> list[dict]:
         with self._lock:
-            src = [l for l in self._logs if app_id is None or l.get("app_id") == app_id]
+            src = [l for l in self._logs if tenant_id is None or l.get("tenant_id") == tenant_id]
             src = list(reversed(src))
             return [copy.deepcopy(l) for l in src[offset:offset + limit]]
 
@@ -152,8 +168,31 @@ def admin_token() -> str:
 
 
 @pytest.fixture
-def app(storage, admin_token):
-    a = create_app(storage=storage, config={
+def tenant_store(tmp_path):
+    s = SQLiteTenantStore(db_path=str(tmp_path / "tenants.sqlite3"))
+    ensure_default_tenant(s)
+    return s
+
+
+@pytest.fixture
+def tenant(tenant_store):
+    tid = generate_tenant_id()
+    secret = generate_tenant_secret()
+    tenant_store.create_tenant(tid, hash_secret(secret), "Test Tenant")
+    return {"tenant_id": tid, "tenant_secret": secret}
+
+
+@pytest.fixture
+def tenant_headers(tenant):
+    creds = base64.b64encode(
+        f"{tenant['tenant_id']}:{tenant['tenant_secret']}".encode()
+    ).decode()
+    return {"Authorization": f"Basic {creds}"}
+
+
+@pytest.fixture
+def app(storage, admin_token, tenant_store):
+    a = create_app(storage=storage, tenants=tenant_store, config={
         "base_url": "http://twin.test",
         "admin_token": admin_token,
     })
@@ -172,30 +211,30 @@ def admin_headers(admin_token):
 
 
 @pytest.fixture
-def test_app_record(client, admin_headers):
-    """Create an app via Twin Plane; return its full record including secret."""
+def test_app_record(client, tenant_headers):
+    """Create an app via Twin Plane under the test tenant; return full record."""
     resp = client.post("/_twin/apps", json={
         "name": "Test App",
         "redirect_uris": ["https://client.example/callback"],
-    }, headers=admin_headers)
+    }, headers=tenant_headers)
     assert resp.status_code == 201, resp.get_data(as_text=True)
     return resp.get_json()
 
 
 @pytest.fixture
-def test_user(client, admin_headers, test_app_record):
+def test_user(client, tenant_headers, test_app_record):
     resp = client.post("/_twin/users", json={
         "app_id": test_app_record["app_id"],
         "name": "Alice Example",
         "email": "alice@example.com",
         "granted_scopes": ["email", "public_profile"],
-    }, headers=admin_headers)
+    }, headers=tenant_headers)
     assert resp.status_code == 201, resp.get_data(as_text=True)
     return resp.get_json()
 
 
 @pytest.fixture
 def basic_auth(test_app_record):
-    import base64
+    """Resource-level Basic Auth (app_id:app_secret) for the Graph/OAuth surface."""
     creds = f"{test_app_record['app_id']}:{test_app_record['app_secret']}"
     return {"Authorization": "Basic " + base64.b64encode(creds.encode()).decode()}

@@ -20,17 +20,25 @@ from .twin_plane.routes import twin_plane_bp
 logger = logging.getLogger(__name__)
 
 
-def create_app(storage: FacebookTwinStorage, config: dict | None = None) -> Flask:
+def create_app(
+    storage: FacebookTwinStorage,
+    tenants=None,
+    config: dict | None = None,
+) -> Flask:
     """Create and configure the Facebook twin Flask application.
 
     Args:
         storage: A FacebookTwinStorage implementation provided by the host.
+        tenants: A TenantStore implementation. Required for Twin Plane tenant
+            auth; tests may omit it for exercises that only hit unauth paths.
         config: Configuration dict. Supported keys:
             - base_url (str): Public base URL of the twin.
             - admin_token (str): Admin bearer token for Twin Plane admin ops.
               Empty string means "accept any bearer" (local dev convenience).
             - interactive_dialog (bool): If True, /dialog/oauth renders a
               consent HTML page; default False (auto-approve).
+            - is_cloud (bool): Enables the cloud guard that rejects
+              tenant_id="default".
 
     Returns:
         Configured Flask application.
@@ -39,18 +47,23 @@ def create_app(storage: FacebookTwinStorage, config: dict | None = None) -> Flas
     base_url = config.get("base_url", "http://localhost:8081")
     admin_token = config.get("admin_token", "")
     interactive_dialog = bool(config.get("interactive_dialog", False))
+    is_cloud = bool(config.get("is_cloud", False))
 
     app = Flask(__name__)
     app.config["TWIN_STORAGE"] = storage
+    app.config["TWIN_TENANTS"] = tenants
     app.config["TWIN_BASE_URL"] = base_url
     app.config["TWIN_ADMIN_TOKEN"] = admin_token
+    app.config["TWIN_IS_CLOUD"] = is_cloud
     app.config["TWIN_SETTINGS"] = {"interactive_dialog": interactive_dialog}
 
     @app.before_request
     def _inject():
         g.storage = app.config["TWIN_STORAGE"]
+        g.tenants = app.config["TWIN_TENANTS"]
         g.base_url = app.config["TWIN_BASE_URL"]
         g.admin_token = app.config["TWIN_ADMIN_TOKEN"]
+        g.is_cloud = app.config["TWIN_IS_CLOUD"]
         g.settings = app.config["TWIN_SETTINGS"]
 
     app.register_blueprint(oauth_dialog_bp)

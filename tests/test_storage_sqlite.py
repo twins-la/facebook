@@ -22,19 +22,21 @@ def storage(tmp_path):
     return SQLiteFacebookStorage(db_path=str(tmp_path / "fb.db"))
 
 
-def _app_data(app_id="100000000000001"):
+def _app_data(app_id="100000000000001", tenant_id="tnt-test"):
     now = int(time.time())
     return {
-        "app_id": app_id, "app_secret": "s" * 32, "name": "App",
-        "redirect_uris": ["https://c/cb"],
+        "app_id": app_id, "tenant_id": tenant_id, "app_secret": "s" * 32,
+        "name": "App", "redirect_uris": ["https://c/cb"],
         "date_created": now, "date_updated": now,
     }
 
 
-def _user_data(fb_id="1000000000000001", app_id="100000000000001"):
+def _user_data(fb_id="1000000000000001", app_id="100000000000001",
+               tenant_id="tnt-test"):
     now = int(time.time())
     return {
-        "app_id": app_id, "fb_id": fb_id, "name": "Alice", "email": "a@x.com",
+        "app_id": app_id, "tenant_id": tenant_id, "fb_id": fb_id,
+        "name": "Alice", "email": "a@x.com",
         "granted_scopes": ["email"],
         "simulate_invalid": False, "simulate_expired": False,
         "date_created": now, "date_updated": now,
@@ -147,14 +149,14 @@ def test_delete_app_cascades(storage):
 
 
 def test_logs_scope(storage):
-    storage.append_log({"operation": "o1", "app_id": "A1", "x": 1})
-    storage.append_log({"operation": "o2", "app_id": "A2"})
-    storage.append_log({"operation": "o3"})  # no app_id
+    storage.append_log({"operation": "o1", "tenant_id": "T1", "x": 1})
+    storage.append_log({"operation": "o2", "tenant_id": "T2"})
+    storage.append_log({"operation": "o3"})  # no tenant_id
     all_logs = storage.list_logs(limit=10)
     assert len(all_logs) == 3
-    a1_logs = storage.list_logs(limit=10, app_id="A1")
-    assert len(a1_logs) == 1
-    assert a1_logs[0]["operation"] == "o1"
+    t1_logs = storage.list_logs(limit=10, tenant_id="T1")
+    assert len(t1_logs) == 1
+    assert t1_logs[0]["operation"] == "o1"
 
 
 def test_persistence_across_instances(tmp_path):

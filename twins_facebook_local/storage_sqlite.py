@@ -3,6 +3,8 @@
 Persists apps, users, auth codes, access tokens, and logs for the
 local-hosted Facebook twin. List-valued fields (redirect_uris, scopes)
 are JSON-encoded in TEXT columns.
+
+Every resource carries a tenant_id column scoping it to a twins.la tenant.
 """
 
 import json
@@ -38,14 +40,17 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
                 c.executescript("""
                     CREATE TABLE IF NOT EXISTS apps (
                         app_id TEXT PRIMARY KEY,
+                        tenant_id TEXT NOT NULL,
                         app_secret TEXT NOT NULL,
                         name TEXT NOT NULL DEFAULT '',
                         redirect_uris TEXT NOT NULL DEFAULT '[]',
                         date_created INTEGER NOT NULL,
                         date_updated INTEGER NOT NULL
                     );
+                    CREATE INDEX IF NOT EXISTS idx_apps_tenant ON apps(tenant_id);
                     CREATE TABLE IF NOT EXISTS users (
                         app_id TEXT NOT NULL,
+                        tenant_id TEXT NOT NULL,
                         fb_id TEXT NOT NULL,
                         name TEXT NOT NULL DEFAULT '',
                         email TEXT NOT NULL DEFAULT '',
@@ -79,10 +84,10 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
                     CREATE TABLE IF NOT EXISTS logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts REAL NOT NULL,
-                        app_id TEXT NOT NULL DEFAULT '',
+                        tenant_id TEXT NOT NULL DEFAULT '',
                         entry TEXT NOT NULL
                     );
-                    CREATE INDEX IF NOT EXISTS idx_logs_app ON logs(app_id);
+                    CREATE INDEX IF NOT EXISTS idx_logs_tenant ON logs(tenant_id);
                 """)
                 c.commit()
             finally:
@@ -95,9 +100,10 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
             c = self._conn()
             try:
                 c.execute(
-                    "INSERT INTO apps (app_id, app_secret, name, redirect_uris,"
-                    " date_created, date_updated) VALUES (?, ?, ?, ?, ?, ?)",
-                    (data["app_id"], data["app_secret"], data.get("name", ""),
+                    "INSERT INTO apps (app_id, tenant_id, app_secret, name, redirect_uris,"
+                    " date_created, date_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (data["app_id"], data.get("tenant_id", ""), data["app_secret"],
+                     data.get("name", ""),
                      json.dumps(list(data.get("redirect_uris", []))),
                      data["date_created"], data["date_updated"]),
                 )
@@ -115,11 +121,17 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
                 c.close()
         return _app_row(row) if row else None
 
-    def list_apps(self) -> list[dict]:
+    def list_apps(self, tenant_id: Optional[str] = None) -> list[dict]:
         with self._lock:
             c = self._conn()
             try:
-                rows = c.execute("SELECT * FROM apps ORDER BY date_created").fetchall()
+                if tenant_id is None:
+                    rows = c.execute("SELECT * FROM apps ORDER BY date_created").fetchall()
+                else:
+                    rows = c.execute(
+                        "SELECT * FROM apps WHERE tenant_id = ? ORDER BY date_created",
+                        (tenant_id,),
+                    ).fetchall()
             finally:
                 c.close()
         return [_app_row(r) for r in rows]
@@ -145,11 +157,11 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
             c = self._conn()
             try:
                 c.execute(
-                    "INSERT INTO users (app_id, fb_id, name, email, granted_scopes,"
+                    "INSERT INTO users (app_id, tenant_id, fb_id, name, email, granted_scopes,"
                     " simulate_invalid, simulate_expired, date_created, date_updated)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (data["app_id"], data["fb_id"], data.get("name", ""),
-                     data.get("email", ""),
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (data["app_id"], data.get("tenant_id", ""), data["fb_id"],
+                     data.get("name", ""), data.get("email", ""),
                      json.dumps(list(data.get("granted_scopes", []))),
                      1 if data.get("simulate_invalid") else 0,
                      1 if data.get("simulate_expired") else 0,
@@ -330,26 +342,26 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
     def append_log(self, entry: dict) -> None:
         import time as _t
         ts = float(entry.get("ts", _t.time()))
-        app_id = str(entry.get("app_id") or "")
-        body = json.dumps({k: v for k, v in entry.items() if k not in ("ts", "app_id")})
+        tenant_id = str(entry.get("tenant_id") or "")
+        body = json.dumps({k: v for k, v in entry.items() if k not in ("ts", "tenant_id")})
         with self._lock:
             c = self._conn()
             try:
-                c.execute("INSERT INTO logs (ts, app_id, entry) VALUES (?, ?, ?)",
-                          (ts, app_id, body))
+                c.execute("INSERT INTO logs (ts, tenant_id, entry) VALUES (?, ?, ?)",
+                          (ts, tenant_id, body))
                 c.commit()
             finally:
                 c.close()
 
     def list_logs(self, limit: int = 100, offset: int = 0,
-                  app_id: Optional[str] = None) -> list[dict]:
+                  tenant_id: Optional[str] = None) -> list[dict]:
         with self._lock:
             c = self._conn()
             try:
-                if app_id is not None:
+                if tenant_id is not None:
                     rows = c.execute(
-                        "SELECT * FROM logs WHERE app_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-                        (app_id, limit, offset),
+                        "SELECT * FROM logs WHERE tenant_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                        (tenant_id, limit, offset),
                     ).fetchall()
                 else:
                     rows = c.execute(
@@ -362,8 +374,8 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
         for r in rows:
             e = json.loads(r["entry"])
             e["ts"] = r["ts"]
-            if r["app_id"]:
-                e["app_id"] = r["app_id"]
+            if r["tenant_id"]:
+                e["tenant_id"] = r["tenant_id"]
             out.append(e)
         return out
 
@@ -371,6 +383,7 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
 def _app_row(r: sqlite3.Row) -> dict:
     return {
         "app_id": r["app_id"],
+        "tenant_id": r["tenant_id"],
         "app_secret": r["app_secret"],
         "name": r["name"],
         "redirect_uris": json.loads(r["redirect_uris"]),
@@ -382,6 +395,7 @@ def _app_row(r: sqlite3.Row) -> dict:
 def _user_row(r: sqlite3.Row) -> dict:
     return {
         "app_id": r["app_id"],
+        "tenant_id": r["tenant_id"],
         "fb_id": r["fb_id"],
         "name": r["name"],
         "email": r["email"],

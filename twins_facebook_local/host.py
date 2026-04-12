@@ -8,6 +8,7 @@ import logging
 import os
 
 from twins_facebook.app import create_app
+from twins_local.tenants import SQLiteTenantStore, ensure_default_tenant
 
 from .config import ADMIN_TOKEN, BASE_URL, DB_PATH, INTERACTIVE_DIALOG
 from .storage_sqlite import SQLiteFacebookStorage
@@ -29,10 +30,13 @@ def create_local_app():
         os.makedirs(db_dir, exist_ok=True)
 
     storage = SQLiteFacebookStorage(db_path=DB_PATH)
-    app = create_app(storage=storage, config={
+    tenants = SQLiteTenantStore()
+    ensure_default_tenant(tenants)
+    app = create_app(storage=storage, tenants=tenants, config={
         "base_url": BASE_URL,
         "admin_token": ADMIN_TOKEN,
         "interactive_dialog": INTERACTIVE_DIALOG,
+        "is_cloud": False,
     })
     logger.info("Local Facebook twin ready — db=%s base_url=%s", DB_PATH, BASE_URL)
     return app

@@ -56,7 +56,10 @@ def exchange(version: str):
     if grant_type == "client_credentials":
         # App access token path.
         token = generate_app_access_token(client_id, client_secret)
+        _app = g.storage.get_app(client_id)
+        _tid = (_app or {}).get("tenant_id", "")
         g.storage.append_log({
+            "tenant_id": _tid,
             "operation": "oauth.token.app_token_issued",
             "app_id": client_id,
         })
@@ -91,7 +94,10 @@ def exchange(version: str):
         "expires_at": now + _DEFAULT_TOKEN_TTL,
         "is_revoked": False,
     })
+    _app = g.storage.get_app(client_id)
+    _tid = (_app or {}).get("tenant_id", "")
     g.storage.append_log({
+        "tenant_id": _tid,
         "operation": "oauth.token.user_token_issued",
         "app_id": client_id,
         "user_fb_id": record["user_fb_id"],
