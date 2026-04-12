@@ -9,6 +9,7 @@ import logging
 from flask import Flask, g, jsonify
 
 from .errors import unknown_path
+from .explainer import explainer_bp
 from .routes.debug_token import debug_token_bp
 from .routes.graph_me import graph_me_bp
 from .routes.oauth_dialog import oauth_dialog_bp
@@ -57,6 +58,7 @@ def create_app(storage: FacebookTwinStorage, config: dict | None = None) -> Flas
     app.register_blueprint(graph_me_bp)
     app.register_blueprint(debug_token_bp)
     app.register_blueprint(twin_plane_bp)
+    app.register_blueprint(explainer_bp)
 
     @app.errorhandler(404)
     def _not_found(_e):
