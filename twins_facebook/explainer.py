@@ -119,9 +119,9 @@ OAuth & Graph API (for end users of your app):
 
 ## Local Usage
 
-pip install twins-facebook twins-local
+pip install twins-facebook-local
 python -c "
-from twins_local.storage_sqlite_facebook import SQLiteFacebookStorage
+from twins_facebook_local.storage_sqlite import SQLiteFacebookStorage
 from twins_facebook.app import create_app
 storage = SQLiteFacebookStorage('facebook.db')
 app = create_app(storage=storage, config={'admin_token': 'dev'})
@@ -294,7 +294,7 @@ EXPLAINER_HTML = """\
         </p>
         <p>
             <strong>Local:</strong> Install with <code>pip install
-            twins-facebook twins-local</code> and run a local instance on
+            twins-facebook-local</code> and run a local instance on
             any port. Same API, same behavior, your machine.
         </p>
 
