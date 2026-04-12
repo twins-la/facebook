@@ -8,6 +8,8 @@ import logging
 
 from flask import Flask, g, jsonify
 
+from twins_local.logs import install_correlation_id
+
 from .errors import unknown_path
 from .explainer import explainer_bp
 from .routes.debug_token import debug_token_bp
@@ -56,6 +58,10 @@ def create_app(
     app.config["TWIN_ADMIN_TOKEN"] = admin_token
     app.config["TWIN_IS_CLOUD"] = is_cloud
     app.config["TWIN_SETTINGS"] = {"interactive_dialog": interactive_dialog}
+
+    # Stamp every request with a correlation_id so emitted log records
+    # share it (twins-la/LOGGING.md §1.2, §3.2).
+    install_correlation_id(app)
 
     @app.before_request
     def _inject():

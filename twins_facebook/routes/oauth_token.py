@@ -16,6 +16,8 @@ import logging
 
 from flask import Blueprint, g, jsonify, request
 
+from twins_local.logs import ANONYMOUS_TENANT_ID
+
 from ..errors import (
     invalid_app_credentials,
     invalid_authorization_code,
@@ -24,6 +26,7 @@ from ..errors import (
     unsupported_api_version,
 )
 from ..ids import generate_app_access_token, generate_user_access_token
+from ..logs import emit
 from ..models import now_ts
 from ..versions import is_supported_version
 
@@ -57,12 +60,14 @@ def exchange(version: str):
         # App access token path.
         token = generate_app_access_token(client_id, client_secret)
         _app = g.storage.get_app(client_id)
-        _tid = (_app or {}).get("tenant_id", "")
-        g.storage.append_log({
-            "tenant_id": _tid,
-            "operation": "oauth.token.app_token_issued",
-            "app_id": client_id,
-        })
+        _tid = (_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+        emit(
+            g.storage,
+            tenant_id=_tid,
+            plane="data",
+            operation="oauth.token.app_token_issued",
+            resource={"type": "app", "id": client_id},
+        )
         return jsonify({"access_token": token, "token_type": "bearer"})
 
     redirect_uri = src.get("redirect_uri")
@@ -95,13 +100,15 @@ def exchange(version: str):
         "is_revoked": False,
     })
     _app = g.storage.get_app(client_id)
-    _tid = (_app or {}).get("tenant_id", "")
-    g.storage.append_log({
-        "tenant_id": _tid,
-        "operation": "oauth.token.user_token_issued",
-        "app_id": client_id,
-        "user_fb_id": record["user_fb_id"],
-    })
+    _tid = (_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+    emit(
+        g.storage,
+        tenant_id=_tid,
+        plane="data",
+        operation="oauth.token.user_token_issued",
+        resource={"type": "app", "id": client_id},
+        details={"user_fb_id": record["user_fb_id"]},
+    )
     return jsonify({
         "access_token": token,
         "token_type": "bearer",

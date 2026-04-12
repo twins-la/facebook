@@ -93,15 +93,19 @@ def _me_impl(target_fb_id: str | None):
             f"(#100) Tried accessing nonexisting field ({unknown[0]}) on node type (User)",
         )
 
+    from twins_local.logs import ANONYMOUS_TENANT_ID
+    from ..logs import emit
+
     _app = g.storage.get_app(rec["app_id"])
-    _tid = (_app or {}).get("tenant_id", "")
-    g.storage.append_log({
-        "tenant_id": _tid,
-        "operation": "graph.me.fetch",
-        "app_id": rec["app_id"],
-        "user_fb_id": user["fb_id"],
-        "fields": fields,
-    })
+    _tid = (_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+    emit(
+        g.storage,
+        tenant_id=_tid,
+        plane="data",
+        operation="graph.me.fetch",
+        resource={"type": "user", "id": user["fb_id"]},
+        details={"app_id": rec["app_id"], "fields": fields},
+    )
 
     return jsonify(project_me(user, fields))
 

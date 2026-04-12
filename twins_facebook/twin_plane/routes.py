@@ -40,6 +40,7 @@ from ..ids import (
     generate_user_access_token,
     generate_user_fb_id,
 )
+from ..logs import emit
 from ..models import app_to_full, app_to_public, now_ts, user_to_admin
 from ..versions import SUPPORTED_VERSIONS
 from .auth import require_admin, require_tenant, require_tenant_or_admin
@@ -174,10 +175,13 @@ def create_tenant():
         secret_hash=hash_secret(tenant_secret),
         friendly_name=friendly_name,
     )
-    g.storage.append_log({
-        "tenant_id": tenant_id,
-        "operation": "twin.tenant.create",
-    })
+    emit(
+        g.storage,
+        tenant_id=tenant_id,
+        plane="twin",
+        operation="twin.tenant.create",
+        resource={"type": "tenant", "id": tenant_id},
+    )
     return jsonify({
         "tenant_id": tenant_id,
         "tenant_secret": tenant_secret,
@@ -216,11 +220,13 @@ def create_app_record():
         "date_created": now,
         "date_updated": now,
     })
-    g.storage.append_log({
-        "tenant_id": target_tenant,
-        "operation": "twin.app.create",
-        "app_id": app_id,
-    })
+    emit(
+        g.storage,
+        tenant_id=target_tenant,
+        plane="twin",
+        operation="twin.app.create",
+        resource={"type": "app", "id": app_id},
+    )
     return jsonify(app_to_full(record)), 201
 
 
@@ -252,11 +258,13 @@ def delete_app_record(app_id: str):
     if not g.is_admin and a.get("tenant_id") != g.tenant_id:
         return jsonify({"error": "App not found"}), 404
     g.storage.delete_app(app_id)
-    g.storage.append_log({
-        "tenant_id": _scope_tenant_id(),
-        "operation": "twin.app.delete",
-        "app_id": app_id,
-    })
+    emit(
+        g.storage,
+        tenant_id=_scope_tenant_id(),
+        plane="twin",
+        operation="twin.app.delete",
+        resource={"type": "app", "id": app_id},
+    )
     return "", 204
 
 
@@ -299,12 +307,14 @@ def create_user():
         "date_created": now,
         "date_updated": now,
     })
-    g.storage.append_log({
-        "tenant_id": app.get("tenant_id", ""),
-        "operation": "twin.user.create",
-        "app_id": app_id,
-        "user_fb_id": fb_id,
-    })
+    emit(
+        g.storage,
+        tenant_id=app["tenant_id"],
+        plane="twin",
+        operation="twin.user.create",
+        resource={"type": "user", "id": fb_id},
+        details={"app_id": app_id},
+    )
     return jsonify(user_to_admin(record)), 201
 
 
@@ -392,12 +402,14 @@ def mint_token():
         "expires_at": now + ttl,
         "is_revoked": False,
     })
-    g.storage.append_log({
-        "tenant_id": app.get("tenant_id", ""),
-        "operation": "twin.token.mint",
-        "app_id": app_id,
-        "user_fb_id": fb_id,
-    })
+    emit(
+        g.storage,
+        tenant_id=app["tenant_id"],
+        plane="twin",
+        operation="twin.token.mint",
+        resource={"type": "user", "id": fb_id},
+        details={"app_id": app_id},
+    )
     return jsonify({
         "access_token": token,
         "token_type": "bearer",

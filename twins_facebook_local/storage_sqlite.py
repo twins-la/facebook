@@ -340,10 +340,14 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
     # -- logs --
 
     def append_log(self, entry: dict) -> None:
+        # entry is a normative record (twins-la/LOGGING.md §3.2) built via
+        # twins_local.logs.build_log_record(). `ts` and `tenant_id` columns
+        # mirror record fields for indexing / filtering; the full record
+        # round-trips through the JSON blob in `entry`.
         import time as _t
         ts = float(entry.get("ts", _t.time()))
         tenant_id = str(entry.get("tenant_id") or "")
-        body = json.dumps({k: v for k, v in entry.items() if k not in ("ts", "tenant_id")})
+        body = json.dumps(entry)
         with self._lock:
             c = self._conn()
             try:
@@ -360,24 +364,18 @@ class SQLiteFacebookStorage(FacebookTwinStorage):
             try:
                 if tenant_id is not None:
                     rows = c.execute(
-                        "SELECT * FROM logs WHERE tenant_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                        "SELECT id, entry FROM logs WHERE tenant_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
                         (tenant_id, limit, offset),
                     ).fetchall()
                 else:
                     rows = c.execute(
-                        "SELECT * FROM logs ORDER BY id DESC LIMIT ? OFFSET ?",
+                        "SELECT id, entry FROM logs ORDER BY id DESC LIMIT ? OFFSET ?",
                         (limit, offset),
                     ).fetchall()
             finally:
                 c.close()
-        out = []
-        for r in rows:
-            e = json.loads(r["entry"])
-            e["ts"] = r["ts"]
-            if r["tenant_id"]:
-                e["tenant_id"] = r["tenant_id"]
-            out.append(e)
-        return out
+        # Flat normative record with pagination `id` envelope (§3.3).
+        return [{"id": r["id"], **json.loads(r["entry"])} for r in rows]
 
 
 def _app_row(r: sqlite3.Row) -> dict:

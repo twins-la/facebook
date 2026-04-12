@@ -23,7 +23,10 @@ import urllib.parse
 from flask import Blueprint, g, redirect, request
 from jinja2 import Environment, select_autoescape
 
+from twins_local.logs import ANONYMOUS_TENANT_ID
+
 from ..ids import generate_authorization_code, generate_user_access_token
+from ..logs import emit
 from ..models import now_ts
 from ..versions import SUPPORTED_VERSIONS, is_supported_version
 
@@ -179,13 +182,17 @@ def _handle_dialog():
     if twin_simulate == "denied":
         frag = response_type == "token"
         _app = storage.get_app(client_id)
-        _tid = (_app or {}).get("tenant_id", "")
-        storage.append_log({
-            "tenant_id": _tid,
-            "operation": "oauth.dialog.denied",
-            "app_id": client_id,
-            "redirect_uri": redirect_uri,
-        })
+        _tid = (_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+        emit(
+            storage,
+            tenant_id=_tid,
+            plane="data",
+            operation="oauth.dialog.denied",
+            resource={"type": "app", "id": client_id},
+            outcome="failure",
+            reason="user_denied",
+            details={"redirect_uri": redirect_uri},
+        )
         return _error_redirect(
             redirect_uri, state,
             error="access_denied", reason="user_denied",
@@ -230,14 +237,18 @@ def _handle_dialog():
             "consumed": False,
         })
         _app = storage.get_app(client_id)
-        _tid = (_app or {}).get("tenant_id", "")
-        storage.append_log({
-            "tenant_id": _tid,
-            "operation": "oauth.dialog.code_issued",
-            "app_id": client_id,
-            "user_fb_id": user["fb_id"],
-            "redirect_uri": redirect_uri,
-        })
+        _tid = (_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+        emit(
+            storage,
+            tenant_id=_tid,
+            plane="data",
+            operation="oauth.dialog.code_issued",
+            resource={"type": "app", "id": client_id},
+            details={
+                "user_fb_id": user["fb_id"],
+                "redirect_uri": redirect_uri,
+            },
+        )
         return _success_redirect_code(redirect_uri, code, state)
 
     # implicit flow
@@ -252,14 +263,15 @@ def _handle_dialog():
         "is_revoked": False,
     })
     _app = storage.get_app(client_id)
-    _tid = (_app or {}).get("tenant_id", "")
-    storage.append_log({
-        "tenant_id": _tid,
-        "operation": "oauth.dialog.token_issued",
-        "app_id": client_id,
-        "user_fb_id": user["fb_id"],
-        "scopes": scopes,
-    })
+    _tid = (_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+    emit(
+        storage,
+        tenant_id=_tid,
+        plane="data",
+        operation="oauth.dialog.token_issued",
+        resource={"type": "app", "id": client_id},
+        details={"user_fb_id": user["fb_id"], "scopes": scopes},
+    )
     return _success_redirect_token(redirect_uri, token, _DEFAULT_TOKEN_TTL, state)
 
 

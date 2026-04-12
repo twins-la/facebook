@@ -97,13 +97,18 @@ def debug(version: str):
                 "scopes": list(rec.get("scopes", [])),
             }
 
+    from twins_local.logs import ANONYMOUS_TENANT_ID
+    from ..logs import emit
+
     caller_app = g.storage.get_app(caller_app_id) if caller_app_id else None
-    _tid = (caller_app or {}).get("tenant_id", "") if caller_app else ""
-    g.storage.append_log({
-        "tenant_id": _tid,
-        "operation": "debug_token",
-        "app_id": caller_app_id,
-        "inspected_app_id": data.get("app_id"),
-    })
+    _tid = (caller_app or {}).get("tenant_id") or ANONYMOUS_TENANT_ID
+    emit(
+        g.storage,
+        tenant_id=_tid,
+        plane="data",
+        operation="token.debug",
+        resource={"type": "app", "id": caller_app_id or ""},
+        details={"inspected_app_id": data.get("app_id", "")},
+    )
 
     return jsonify({"data": data})
