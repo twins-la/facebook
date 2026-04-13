@@ -92,19 +92,15 @@ The Twin Plane is served at `/_twin/`. Unauthenticated endpoints:
 - `GET /_twin/references`
 - `GET /_twin/settings`
 
-Admin-scoped endpoints (require `X-Twin-Admin-Token` header, or `Authorization: Bearer <admin_token>`):
+Tenant or admin (HTTP Basic Auth with `tenant_id:tenant_secret`, or admin token via `X-Twin-Admin-Token` header or `Authorization: Bearer <admin_token>`):
 
 - `POST|GET|DELETE /_twin/apps[/<app_id>]`
 - `POST|GET|PATCH|DELETE /_twin/users[/<fb_id>]`
+- `POST /_twin/tokens` — mint a user access token directly (for fixtures)
+- `GET /_twin/logs` — operation logs; tenants see only their own tenant's logs
+
+Admin-only:
+
 - `PUT /_twin/settings` — toggle `interactive_dialog`
 
-Tenant or admin (Basic Auth with `app_id:app_secret`, or admin token):
-
-- `POST /_twin/tokens` — mint a user access token directly (for fixtures)
-- `GET /_twin/logs` — operation logs; tenants see only their own app's logs
-
 When no admin token is configured in the host, any bearer token is accepted (local-dev convenience). Production hosts should always set `TWIN_ADMIN_TOKEN`.
-
-## Version
-
-0.1.0
