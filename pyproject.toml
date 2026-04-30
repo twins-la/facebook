@@ -16,6 +16,15 @@ dev = [
     "pytest>=8.0",
     "requests>=2.31,<3.0",
 ]
+render = [
+    "pytest-playwright>=0.5,<1.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["twins_facebook*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "render: browser-render-grain tests (requires `pip install -e .[render] && playwright install chromium`); excluded by default — run with `pytest -m render`",
+]
+addopts = "-m 'not render'"
