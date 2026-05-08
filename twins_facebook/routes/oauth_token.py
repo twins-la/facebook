@@ -46,10 +46,12 @@ def exchange(version: str):
 
     client_id = src.get("client_id")
     client_secret = src.get("client_secret")
-    if not client_id:
-        return missing_parameter("client_id")
-    if not client_secret:
-        return missing_parameter("client_secret")
+    # Missing client_id / client_secret is an app-credential failure, not a
+    # parameter failure: the caller has not proved app identity. Same logic
+    # as access_token / code 190 on the user-token surfaces — see
+    # twins-la/facebook#1. App credentials use code 101, not 190.
+    if not client_id or not client_secret:
+        return invalid_app_credentials()
 
     app = g.storage.get_app(client_id)
     if not app or not hmac.compare_digest(app["app_secret"], client_secret):

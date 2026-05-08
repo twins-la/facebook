@@ -46,7 +46,10 @@ def debug(version: str):
     if not input_token:
         return missing_parameter("input_token")
     if not caller_token:
-        return missing_parameter("access_token")
+        # Caller must prove identity. A missing access_token is an
+        # access-token failure (code 190), not a parameter failure
+        # (code 100) — same logic as graph_me. See twins-la/facebook#1.
+        return invalid_access_token()
 
     # Validate caller_token — accept either an app access token
     # (APP_ID|APP_SECRET) or a regular user access token. Invalid-but-present

@@ -59,6 +59,13 @@ def test_debug_missing_input_token(client, test_app_record):
 def test_debug_missing_access_token(client):
     r = client.get("/v19.0/debug_token", query_string={"input_token": "foo"})
     assert r.status_code == 400
+    # Caller's missing access_token is an access-token failure (190), not
+    # a parameter failure (100) — same logic as graph_me. The caller must
+    # prove identity; whether the token is absent or unrecognized is the
+    # same logical failure. See twins-la/facebook#1.
+    err = r.get_json()["error"]
+    assert err["code"] == 190
+    assert err["type"] == "OAuthException"
 
 
 def test_debug_unknown_input_token(client, test_app_record):

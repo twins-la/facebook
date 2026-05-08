@@ -126,6 +126,48 @@ def test_me_unknown_field_returns_error(client, basic_auth, test_user, tenant_he
 def test_me_missing_token(client):
     r = client.get("/v19.0/me")
     assert r.status_code == 400
+    # Missing access_token is an access-token failure (190), not a
+    # parameter failure (100). See twins-la/facebook#1.
+    err = r.get_json()["error"]
+    assert err["code"] == 190
+    assert err["type"] == "OAuthException"
+
+
+def test_me_no_usable_access_token_returns_190(client):
+    """A missing/empty access_token is an access-token failure, not a parameter
+    failure: the caller cannot prove identity. All four "no usable token"
+    variants must return Facebook OAuthException code 190, matching the
+    code returned when an access_token is *supplied* but unrecognized.
+
+    Regression test for twins-la/facebook#1.
+    """
+    cases = [
+        # (description, url, extra_headers)
+        ("absent",         "/v21.0/me",                       {}),
+        ("empty value",    "/v21.0/me?access_token=",         {}),
+        ("invalid value",  "/v21.0/me?access_token=EAAnope",  {}),
+        ("bare bearer",    "/v21.0/me",                       {"Authorization": "Bearer"}),
+        ("bearer empty",   "/v21.0/me",                       {"Authorization": "Bearer "}),
+    ]
+    for desc, url, headers in cases:
+        r = client.get(url, headers=headers)
+        assert r.status_code == 400, f"{desc}: status {r.status_code}"
+        err = r.get_json()["error"]
+        assert err["code"] == 190, (
+            f"{desc}: expected code 190 (access-token error), "
+            f"got code {err['code']} type {err['type']}"
+        )
+        assert err["type"] == "OAuthException", (
+            f"{desc}: expected OAuthException, got {err['type']}"
+        )
+
+
+def test_me_no_usable_access_token_v19(client):
+    """Same contract on v19.0 — both supported versions must agree."""
+    r = client.get("/v19.0/me")
+    err = r.get_json()["error"]
+    assert err["code"] == 190
+    assert err["type"] == "OAuthException"
 
 
 def test_user_by_id_self_ok(client, basic_auth, test_user, tenant_headers, test_app_record):

@@ -91,6 +91,27 @@ def test_redirect_uri_mismatch_rejected(client, admin_headers, test_app_record, 
 def test_missing_params(client, test_app_record):
     r = client.get("/v19.0/oauth/access_token", query_string={})
     assert r.status_code == 400
+    # Missing app credentials is an app-credential failure (code 101), not
+    # a generic parameter failure (code 100). Same principle as missing
+    # access_token → 190 on the user-token surfaces. See twins-la/facebook#1.
+    err = r.get_json()["error"]
+    assert err["code"] == 101
+
+
+def test_missing_client_secret_returns_101(client, test_app_record):
+    r = client.get("/v19.0/oauth/access_token", query_string={
+        "client_id": test_app_record["app_id"],
+    })
+    assert r.status_code == 400
+    assert r.get_json()["error"]["code"] == 101
+
+
+def test_missing_client_id_returns_101(client, test_app_record):
+    r = client.get("/v19.0/oauth/access_token", query_string={
+        "client_secret": test_app_record["app_secret"],
+    })
+    assert r.status_code == 400
+    assert r.get_json()["error"]["code"] == 101
 
 
 def test_app_access_token_via_client_credentials(client, test_app_record):

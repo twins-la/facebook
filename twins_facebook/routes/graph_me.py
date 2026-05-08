@@ -17,7 +17,6 @@ from flask import Blueprint, g, jsonify, request
 from ..errors import (
     expired_access_token,
     invalid_access_token,
-    missing_parameter,
     revoked_access_token,
     unsupported_api_version,
     fb_error,
@@ -38,9 +37,15 @@ def _extract_token() -> str | None:
 
 
 def _resolve_token(token: str):
-    """Return (token_record, user_record, error_response_or_None)."""
+    """Return (token_record, user_record, error_response_or_None).
+
+    A missing/empty access_token is an access-token failure (code 190), not a
+    parameter failure (code 100): the caller has not proved identity. Real
+    Facebook treats "no usable token" the same as "token does not validate".
+    See twins-la/facebook#1.
+    """
     if not token:
-        return None, None, missing_parameter("access_token")
+        return None, None, invalid_access_token()
 
     rec = g.storage.get_access_token(token)
     if not rec:
