@@ -23,30 +23,34 @@ See [SCENARIOS.md](SCENARIOS.md) for the full scope and authoritative references
 
 This package is not run directly. It is loaded by a host:
 
-- **Local**: run via Docker Compose from `/src/twins/local/`
-- **Cloud**: available at `facebook.twins.la`
+- **Local**: `twins-facebook-local` (sibling package under `twins_facebook_local/`) — run via `python -m twins_facebook_local`.
+- **Cloud**: available at [facebook.twins.la](https://facebook.twins.la).
 
 ## Quick Start (local)
 
 ```bash
-cd /src/twins/local
-docker compose up facebook
+pip install -e . ./twins_facebook_local/
+python -m twins_facebook_local
 ```
 
-The twin listens on `http://localhost:8081`. Then, using any HTTP client:
+The twin listens on `http://localhost:8081`. The Twin Plane calls below send
+`Authorization: Bearer dev` — in local dev, when no admin token is configured,
+any bearer token is accepted. Then, using any HTTP client:
 
 ```python
 import requests
 
 TWIN = "http://localhost:8081"
+HDRS = {"Authorization": "Bearer dev"}  # local dev: any bearer token works
 
-# 1. Create an app and a test user via Twin Plane.
-app = requests.post(f"{TWIN}/_twin/apps", json={
+# 1. Create an app, then a test user that references it.
+app = requests.post(f"{TWIN}/_twin/apps", headers=HDRS, json={
     "name": "My App",
     "redirect_uris": ["https://myapp.test/oauth/callback"],
 }).json()
 
-user = requests.post(f"{TWIN}/_twin/users", json={
+user = requests.post(f"{TWIN}/_twin/users", headers=HDRS, json={
+    "app_id": app["app_id"],
     "name": "Alice Example",
     "email": "alice@example.com",
     "granted_scopes": ["email", "public_profile"],
@@ -104,3 +108,7 @@ Admin-only:
 - `PUT /_twin/settings` — toggle `interactive_dialog`
 
 When no admin token is configured in the host, any bearer token is accepted (local-dev convenience). Production hosts should always set `TWIN_ADMIN_TOKEN`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
